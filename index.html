@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HERMES RUNTIME</title>
+<meta name="description" content="A precision platformer with warp mechanics. Navigate 5 gauntlets. Conquer the runtime.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cyan: #00f0ff;
+    --gold: #ffd700;
+    --pink: #ff0066;
+    --dark: #0a0a0f;
+    --body-font: 'Share Tech Mono', monospace;
+    --display-font: 'Orbitron', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: var(--body-font);
+    cursor: crosshair;
+  }
+
+  /* === GAME FULLSCREEN === */
+  iframe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    z-index: 1;
+  }
+
+  /* Block iframe from receiving input while overlay is visible */
+  .input-blocker {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    background: transparent;
+  }
+
+  .input-blocker.hidden {
+    display: none;
+  }
+
+  /* === INFO OVERLAY — VISIBLE ON LOAD === */
+  .info-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(5, 5, 10, 0.82);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s ease;
+  }
+
+  .info-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* === SCANLINES ON OVERLAY === */
+  .info-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.05) 2px,
+      rgba(0, 0, 0, 0.05) 4px
+    );
+    pointer-events: none;
+  }
+
+  .info-content {
+    position: relative;
+    z-index: 2;
+    max-width: 780px;
+    width: 90%;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 2rem 2.5rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 240, 255, 0.15) transparent;
+  }
+
+  .info-content::-webkit-scrollbar { width: 4px; }
+  .info-content::-webkit-scrollbar-track { background: transparent; }
+  .info-content::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.15); border-radius: 2px; }
+
+  /* === HEADER === */
+  .info-title {
+    font-family: var(--display-font);
+    font-size: clamp(1.4rem, 4vw, 2.4rem);
+    font-weight: 900;
+    color: var(--gold);
+    text-align: center;
+    letter-spacing: 0.15em;
+    text-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+    margin-bottom: 0.3rem;
+  }
+
+  .info-subtitle {
+    text-align: center;
+    font-size: clamp(0.6rem, 1.2vw, 0.75rem);
+    color: var(--cyan);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    opacity: 0.5;
+    margin-bottom: 1.8rem;
+  }
+
+  /* === DIVIDER === */
+  .divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+
+  .divider .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.15), transparent);
+  }
+
+  .divider .icon {
+    color: var(--gold);
+    opacity: 0.25;
+    font-size: 1rem;
+  }
+
+  /* === SECTION LABEL === */
+  .section-label {
+    font-family: var(--display-font);
+    font-size: 0.6rem;
+    letter-spacing: 0.5em;
+    color: var(--pink);
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 1.2rem;
+  }
+
+  /* === CONTROLS GRID === */
+  .controls-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+  }
+
+  .control-card {
+    background: rgba(10, 10, 20, 0.7);
+    border: 1px solid rgba(0, 240, 255, 0.06);
+    padding: 1.2rem 1rem;
+  }
+
+  .control-card h3 {
+    font-family: var(--display-font);
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.2em;
+    margin-bottom: 0.5rem;
+  }
+
+  .control-card p {
+    font-size: 0.72rem;
+    line-height: 1.6;
+    color: rgba(200, 200, 210, 0.55);
+  }
+
+  .key {
+    display: inline-block;
+    background: rgba(0, 240, 255, 0.07);
+    border: 1px solid rgba(0, 240, 255, 0.12);
+    padding: 0.05em 0.4em;
+    font-size: 0.65rem;
+    color: var(--cyan);
+    margin: 0.05em;
+    border-radius: 2px;
+  }
+
+  /* === LEVELS GRID === */
+  .levels-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+  }
+
+  .level-card {
+    background: rgba(10, 10, 20, 0.6);
+    border: 1px solid rgba(0, 240, 255, 0.04);
+    padding: 0.8rem 0.5rem;
+    text-align: center;
+  }
+
+  .level-num {
+    font-family: var(--display-font);
+    font-size: 0.45rem;
+    color: rgba(0, 240, 255, 0.2);
+    letter-spacing: 0.3em;
+    margin-bottom: 0.2rem;
+  }
+
+  .level-name {
+    font-family: var(--display-font);
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #bbb;
+    letter-spacing: 0.1em;
+  }
+
+  .level-desc {
+    font-size: 0.5rem;
+    color: rgba(200, 200, 210, 0.3);
+    margin-top: 0.2rem;
+  }
+
+  /* === PLAY BUTTON === */
+  .play-section {
+    text-align: center;
+    margin-top: 2rem;
+  }
+
+  .play-btn {
+    display: inline-block;
+    font-family: var(--display-font);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    color: var(--dark);
+    background: var(--gold);
+    padding: 0.8em 2.5em;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+  }
+
+  .play-btn:hover {
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .play-btn::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border: 1px solid rgba(255, 215, 0, 0.15);
+    pointer-events: none;
+  }
+
+  .play-hint {
+    margin-top: 0.8rem;
+    font-size: 0.6rem;
+    color: rgba(0, 240, 255, 0.2);
+    letter-spacing: 0.2em;
+  }
+
+  /* === FOOTER === */
+  .info-footer {
+    text-align: center;
+    margin-top: 1.2rem;
+  }
+
+  .jam-badge {
+    display: inline-block;
+    padding: 0.3em 1em;
+    border: 1px solid rgba(255, 0, 102, 0.1);
+    font-family: var(--display-font);
+    font-size: 0.45rem;
+    color: var(--pink);
+    letter-spacing: 0.3em;
+    opacity: 0.35;
+  }
+
+  /* === YOUTUBE CTA === */
+  .yt-section {
+    text-align: center;
+    margin-top: 0.5rem;
+  }
+
+  .yt-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.8em 1.5em;
+    background: rgba(255, 0, 0, 0.06);
+    border: 1px solid rgba(255, 0, 0, 0.15);
+    text-decoration: none;
+    transition: all 0.25s;
+    cursor: pointer;
+  }
+
+  .yt-link:hover {
+    background: rgba(255, 0, 0, 0.12);
+    border-color: rgba(255, 0, 0, 0.35);
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .yt-icon {
+    width: 20px;
+    height: 20px;
+    color: #ff0033;
+    flex-shrink: 0;
+  }
+
+  .yt-text {
+    font-family: var(--display-font);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: #ddd;
+  }
+
+  .yt-handle {
+    font-family: var(--body-font);
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.3);
+    letter-spacing: 0.1em;
+  }
+
+  /* === INFO RE-OPEN BUTTON (after dismissed) === */
+  .info-btn {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 100;
+    background: rgba(0, 240, 255, 0.06);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    color: var(--cyan);
+    font-family: var(--body-font);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    padding: 0.4em 0.8em;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+
+  .info-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .info-btn:hover {
+    background: rgba(0, 240, 255, 0.12);
+    border-color: rgba(0, 240, 255, 0.4);
+  }
+
+  /* === RESPONSIVE === */
+  @media (max-width: 700px) {
+    .controls-grid { grid-template-columns: repeat(2, 1fr); }
+    .levels-grid { grid-template-columns: repeat(3, 1fr); }
+    .info-content { padding: 1.5rem 1.2rem; }
+  }
+
+  @media (max-width: 420px) {
+    .controls-grid { grid-template-columns: 1fr; }
+    .levels-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- === GAME — FULL VIEWPORT (visible behind overlay) === -->
+<iframe id="game" src="hermes-runtime_index.html" title="Hermes Runtime Game" allowfullscreen></iframe>
+
+<!-- Blocks iframe from stealing input while overlay is showing -->
+<div class="input-blocker" id="inputBlocker"></div>
+
+<!-- === INFO BUTTON (appears after overlay dismissed) === -->
+<button class="info-btn" id="infoBtn" tabindex="-1">[ ? ]</button>
+
+<!-- === INFO OVERLAY — SHOWN ON LOAD OVER THE GAME === -->
+<div class="info-overlay" id="infoOverlay">
+  <div class="info-content">
+
+    <h1 class="info-title">HERMES RUNTIME</h1>
+    <p class="info-subtitle">V1 Demo &middot; Precision Platformer &middot; Warp Mechanics &middot; 5 Gauntlets</p>
+
+    <div class="section-label">// Controls</div>
+
+    <div class="controls-grid">
+      <div class="control-card">
+        <h3>MOVE</h3>
+        <p>
+          <span class="key">A</span> <span class="key">D</span> or
+          <span class="key">&larr;</span> <span class="key">&rarr;</span><br>
+          Run left and right
+        </p>
+      </div>
+      <div class="control-card">
+        <h3>JUMP</h3>
+        <p>
+          <span class="key">W</span> or <span class="key">&uarr;</span><br>
+          Tap short, hold for full arc
+        </p>
+      </div>
+      <div class="control-card">
+        <h3>WARP</h3>
+        <p>
+          Hold <span class="key">SHIFT</span> + aim<br>
+          Release to teleport
+        </p>
+      </div>
+      <div class="control-card">
+        <h3>SYSTEM</h3>
+        <p>
+          <span class="key">M</span> audio &middot;
+          <span class="key">R</span> restart<br>
+          <span class="key">ENTER</span> begin
+        </p>
+      </div>
+    </div>
+
+    <div class="divider">
+      <div class="line"></div>
+      <span class="icon">&#9878;</span>
+      <div class="line"></div>
+    </div>
+
+    <div class="section-label">// Gauntlets</div>
+
+    <div class="levels-grid">
+      <div class="level-card">
+        <div class="level-num">01</div>
+        <div class="level-name">INIT</div>
+        <div class="level-desc">First steps</div>
+      </div>
+      <div class="level-card">
+        <div class="level-num">02</div>
+        <div class="level-name">LINK</div>
+        <div class="level-desc">Chain momentum</div>
+      </div>
+      <div class="level-card">
+        <div class="level-num">03</div>
+        <div class="level-name">FORK</div>
+        <div class="level-desc">Choose your path</div>
+      </div>
+      <div class="level-card">
+        <div class="level-num">04</div>
+        <div class="level-name">SYNC</div>
+        <div class="level-desc">Timing is key</div>
+      </div>
+      <div class="level-card">
+        <div class="level-num">05</div>
+        <div class="level-name">EXIT</div>
+        <div class="level-desc">Final gauntlet</div>
+      </div>
+    </div>
+
+    <div class="play-section">
+      <button class="play-btn" id="playBtn" tabindex="-1">PLAY</button>
+      <p class="play-hint">OR PRESS ENTER</p>
+    </div>
+
+    <div class="divider">
+      <div class="line"></div>
+      <span class="icon">&#9878;</span>
+      <div class="line"></div>
+    </div>
+
+    <div class="yt-section">
+      <a href="https://www.youtube.com/@HermesRunTime" target="_blank" rel="noopener" class="yt-link" tabindex="-1">
+        <svg class="yt-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        </svg>
+        <span class="yt-text">SUBSCRIBE FOR GAME UPDATES</span>
+        <span class="yt-handle">@HermesRunTime</span>
+      </a>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const overlay = document.getElementById('infoOverlay');
+  const playBtn = document.getElementById('playBtn');
+  const infoBtn = document.getElementById('infoBtn');
+  const gameIframe = document.getElementById('game');
+  const inputBlocker = document.getElementById('inputBlocker');
+
+  function dismissOverlay() {
+    overlay.classList.add('hidden');
+    infoBtn.classList.add('visible');
+    inputBlocker.classList.add('hidden');
+    gameIframe.focus();
+  }
+
+  function showOverlay() {
+    overlay.classList.remove('hidden');
+    infoBtn.classList.remove('visible');
+    inputBlocker.classList.remove('hidden');
+    // Pull focus away from iframe so parent catches keys
+    document.body.focus();
+  }
+
+  // On load, make sure parent has focus (not the iframe)
+  window.addEventListener('load', () => {
+    document.body.setAttribute('tabindex', '-1');
+    document.body.focus();
+  });
+
+  // PLAY button dismisses overlay
+  playBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dismissOverlay();
+  });
+
+  // ENTER key dismisses overlay and starts game in one press
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !overlay.classList.contains('hidden')) {
+      e.preventDefault();
+      dismissOverlay();
+      // Forward Enter to iframe so Phaser starts the game
+      setTimeout(() => {
+        gameIframe.focus();
+        gameIframe.contentWindow.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true
+        }));
+        gameIframe.contentWindow.dispatchEvent(new KeyboardEvent('keyup', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true
+        }));
+      }, 150);
+    }
+    if (e.key === 'Escape') {
+      if (overlay.classList.contains('hidden')) {
+        showOverlay();
+      } else {
+        dismissOverlay();
+      }
+    }
+  });
+
+  // Re-open info button
+  infoBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showOverlay();
+  });
+
+  // Click outside content closes overlay
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      dismissOverlay();
+    }
+  });
+</script>
+
+</body>
+</html>
